@@ -1,4 +1,4 @@
-Note: this fork modifies the number of browser steps from 10 to 30 to faciliate longer and more complex UI interactions.
+Note: this fork modifies the number of browser steps from 10 to 30 to faciliate longer and more complex UI interactions. We also provide a `run.sh` that simplifies running changedection.io.
 
 ## Web Site Change Detection, Restock monitoring and notifications.
 
