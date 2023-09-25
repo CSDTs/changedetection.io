@@ -64,7 +64,7 @@ app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 
 app.config.exit = Event()
 
-app.config['NEW_VERSION_AVAILABLE'] = False
+app.config['NEW__AVAILABLE'] = False
 
 if os.getenv('FLASK_SERVER_NAME'):
     app.config['SERVER_NAME'] = os.getenv('FLASK_SERVER_NAME')
