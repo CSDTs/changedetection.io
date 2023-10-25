@@ -737,39 +737,28 @@ class html_requests(Fetcher):
         self.headers = r.headers
         self.raw_content = r.content
 
-class base_html_blueprint_playwright(Fetcher):
-    """
-    TODO: 
-    1) first we need to get a read out of the steps
-    2) then we need to stand up a browser just like from blueprint, or just call that class
-    3) then we need to connect the two
-    
-    """
-    fetcher_description = "Playwright {}/Javascript".format(
-        os.getenv("PLAYWRIGHT_BROWSER_TYPE", 'chromium').capitalize()
-    )
-    if os.getenv("PLAYWRIGHT_DRIVER_URL"):
-        fetcher_description += " via '{}'".format(os.getenv("PLAYWRIGHT_DRIVER_URL"))
-
-    browser_type = ''
-    command_executor = ''
-
-    # Configs for Proxy setup
-    # In the ENV vars, is prefixed with "playwright_proxy_", so it is for example "playwright_proxy_server"
-    playwright_proxy_settings_mappings = ['bypass', 'server', 'username', 'password']
-
-    proxy = None
-
-    def __init__(self, proxy_override=None):
-        pass
-
-
-
+def list_files(startpath):
+    for root, dirs, files in os.walk(startpath):
+        level = root.replace(startpath, '').count(os.sep)
+        indent = ' ' * 4 * (level)
+        print('{}{}/'.format(indent, os.path.basename(root)))
+        subindent = ' ' * 4 * (level + 1)
+        for f in files:
+            print('{}{}'.format(subindent, f))
 
 # Decide which is the 'real' HTML webdriver, this is more a system wide config
 # rather than site-specific.
 use_playwright_as_chrome_fetcher = os.getenv('PLAYWRIGHT_DRIVER_URL', False)
-if use_playwright_as_chrome_fetcher:
+use_playwright_session_style = os.getenv('PLAYWRIGHT_STYLE', False) # HEADFUL
+
+html_webdriver = base_html_webdriver
+
+use_playwright_and_blueprint =\
+    "playwright" in use_playwright_as_chrome_fetcher \
+        and use_playwright_session_style
+
+if not use_playwright_and_blueprint:
     html_webdriver = base_html_playwright
-else:
-    html_webdriver = base_html_webdriver
+if use_playwright_and_blueprint:
+    from .long_session import base_html_playwright_long_session    
+    html_webdriver = base_html_playwright_long_session

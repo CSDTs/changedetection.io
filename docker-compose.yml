@@ -6,6 +6,7 @@ networks:
 
 services:
   changedetection:
+    #command: ["bash", "-c", "tail -f /dev/null"] # so we can python -m pdb
     image: changedetection.io
     container_name: changedetection
     hostname: changedetection
@@ -16,8 +17,10 @@ services:
       - PUID= 1000
       - PGID= 1000
       - PLAYWRIGHT_DRIVER_URL=ws://playwright-chrome:3000/?stealth=1&--disable-web-security=true
+      - PLAYWRIGHT_STYLE=LONG SESSION
     ports:
       - 5000:5000
+      - 4444:4444
     restart: unless-stopped
     depends_on:
       playwright-chrome:

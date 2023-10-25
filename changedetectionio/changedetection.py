@@ -12,9 +12,12 @@ import os
 import signal
 import socket
 import sys
+import logging
 
 from . import store, changedetection_app, content_fetcher
 from . import __version__
+
+logging.basicConfig(level=logging.DEBUG)
 
 # Only global so we can access it in the signal handler
 app = None
