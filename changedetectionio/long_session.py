@@ -10,6 +10,9 @@ from changedetectionio.content_fetcher import (
     PageUnloadable, EmptyReply,
     ScreenshotUnavailable, Non200ErrorCodeReceived
 )
+from changedetectionio.browser_steps import nonContext
+
+io_interface_context = None
 
 class base_html_playwright_long_session(Fetcher):
     # By holding open a "live" browser context we can side step the buggy behavior
@@ -31,18 +34,34 @@ class base_html_playwright_long_session(Fetcher):
 
     # So in summary:
 
-    # - Persistent Playwright context/page 
-    # - Long timeout to keep page open
-    # - Methods to interact on demand 
-    # - Handle events like page close
-    # - Likely remove puppeteer code
+    # - Persistent Playwright context/page < blueprint/browser_steps/nonContext.py
+    # - Likely remove puppeteer code < likely 
+    # - Long timeout to keep page open < easy, just set
+    # - ~Methods to interact on demand~ < don't need 
+    # - ~Handle events like page close~ < not sure we need
+    context = None
+    page = None
+    render_extra_delay = 1
+    stale = False
+    # bump and kill this if idle after X sec
+    age_start = 0
 
     fetcher_description = "Playwright chromium with longer session"
     if os.getenv("PLAYWRIGHT_DRIVER_URL"):
         fetcher_description += " via '{}'".format(os.getenv("PLAYWRIGHT_DRIVER_URL"))
 
-    browser_type = ''
-    command_executor = ''
+    # use a special driver, maybe locally etc
+    command_executor = os.getenv(
+        "PLAYWRIGHT_BROWSERSTEPS_DRIVER_URL"
+    )
+    # if not..
+    if not command_executor:
+        command_executor = os.getenv(
+            "PLAYWRIGHT_DRIVER_URL",
+            'ws://playwright-chrome:3000'
+        ).strip('"')
+
+    browser_type = os.getenv("PLAYWRIGHT_BROWSER_TYPE", 'chromium').strip('"')
 
     # Configs for Proxy setup
     # In the ENV vars, is prefixed with "playwright_proxy_", so it is for example "playwright_proxy_server"
@@ -55,11 +74,6 @@ class base_html_playwright_long_session(Fetcher):
 
         super().__init__()
         # .strip('"') is going to save someone a lot of time when they accidently wrap the env value
-        self.browser_type = os.getenv("PLAYWRIGHT_BROWSER_TYPE", 'chromium').strip('"')
-        self.command_executor = os.getenv(
-            "PLAYWRIGHT_DRIVER_URL",
-            'ws://playwright-chrome:3000'
-        ).strip('"')
 
         # If any proxy settings are enabled, then we should setup the proxy object
         proxy_args = {}
@@ -82,6 +96,65 @@ class base_html_playwright_long_session(Fetcher):
             if parsed.username:
                 self.proxy['username'] = parsed.username
                 self.proxy['password'] = parsed.password
+
+        self.age_start = time.time()
+        # We keep the playwright session open for many minutes
+        seconds_keepalive = int(os.getenv('BROWSERSTEPS_MINUTES_KEEPALIVE', 10)) * 60
+        keepalive = "&timeout={}".format(((seconds_keepalive + 3) * 1000))        
+
+
+        # Make context; should re use if called again
+        if not io_interface_context:
+            io_interface_context = nonContext.c_sync_playwright()
+            # Start the Playwright context, which is actually a nodejs sub-process and communicates over STDIN/STDOUT pipes
+            io_interface_context = io_interface_context.start()
+
+
+        self.playwright_browser = io_interface_context.chromium.connect_over_cdp(
+                os.getenv('PLAYWRIGHT_DRIVER_URL', '') + keepalive)
+        if self.context is None:
+            self.connect(proxy=self.proxy)
+
+    # Connect and setup a new context
+    def connect(self, proxy=None):
+        # Should only get called once - test that
+        keep_open = 1000 * 60 * 5
+        now = time.time()
+
+        # @todo handle multiple contexts, bind a unique id from the browser on each req?
+        self.context = self.playwright_browser.new_context(
+            # @todo
+            #                user_agent=request_headers['User-Agent'] if request_headers.get('User-Agent') else 'Mozilla/5.0',
+            #               proxy=self.proxy,
+            # This is needed to enable JavaScript execution on GitHub and others
+            bypass_csp=True,
+            # Should never be needed
+            accept_downloads=False,
+            proxy=proxy
+        )
+
+        self.page = self.context.new_page()
+
+        # self.page.set_default_navigation_timeout(keep_open)
+        self.page.set_default_timeout(keep_open)
+        # @todo probably this doesnt work
+        self.page.on(
+            "close",
+            self.mark_as_closed,
+        )
+        # Listen for all console events and handle errors
+        self.page.on("console", lambda msg: print(f"Browser steps console - {msg.type}: {msg.text} {msg.args}"))
+
+        print("Time to browser setup", time.time() - now)
+        self.page.wait_for_timeout(1 * 1000)    
+
+    def mark_as_closed(self):
+        print("Page closed, cleaning up..")
+
+    @property
+    def has_expired(self):
+        if not self.page:
+            return True
 
     def screenshot_step(self, step_n=''):
         screenshot = self.page.screenshot(type='jpeg', full_page=True, quality=85)
